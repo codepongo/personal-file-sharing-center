@@ -4,10 +4,14 @@ import os
 import time
 import config
 from urllib import quote
+import sys
 
 # load config file
 root = config.root
-
+try:
+    os.chdir(os.path.dirname(__file__))
+except:
+    pass
 types = [
     ".h",".cpp",".cxx",".cc",".c",".cs",".html",".js",
     ".php",".java",".py",".rb",".as",".jpeg",".jpg",".png",
@@ -21,12 +25,18 @@ render = web.template.render('template')
 
 urls = (
     '/favicon.ico',"Ico",
+   '/(.*).html', 'static',
     '/(.*)','Index',
 )
+class static:
+    def GET(self, path):
+        path = os.path.join(root, path + '.html')
+        web.header('Content-Type','text/html')
+        return open(path, 'rb').read()
 
 class Ico:
     def GET(self):
-        return open("static/img/favicon.ico").read()
+        return open(os.path.join(os.path.join(os.path.join('static','img'),'favicon.ico'))).read()
 
 class Index:
     def GET(self,path):
@@ -37,10 +47,14 @@ class Index:
             item = sorted(item, key = str.lower)
             
             for i in item:
-                if i[0] == '.' or os.path.isdir(root + i):
+                if i[0] == '.' or os.path.isdir(os.path.join(root, i)):
                     continue
                 temp = {}
-                temp['name'] = i 
+                if sys.platform == 'win32':
+                    temp['name'] = i.decode('gbk')
+                else:
+                    temp['name'] = i
+
                 temp['type'] = '.' + i.split('.')[-1]
                 
                 try:
@@ -50,9 +64,9 @@ class Index:
 
 
                 temp["time"] = time.strftime("%H:%M:%S %Y-%m-%d",
-                        time.localtime(os.path.getmtime(root + i))) 
+                        time.localtime(os.path.getmtime(os.path.join(root, i))))
                 
-                size = os.path.getsize(os.path.join(root,i))
+                size = os.path.getsize(os.path.join(root, i))
                 if size < 1024:
                     size = str(size) + ".0 B"
                 elif size < 1024 * 1024:
@@ -63,24 +77,38 @@ class Index:
                     size = "%0.1f GB" % (size/1024.0/1024.0/1024.0)
                 
                 temp["size"] = size
-                temp["encode"] = quote(i)
+                if sys.platform == 'win32':
+                    temp["encode"] = i.decode('gbk')
+                else:
+                    temp["encode"] = quote(i)
 
                 list.append(temp)
-            
-            return render.layout(list) 
+            if web.input().has_key('delete'):
+                yield render.layout(list, True)
+            else:
+                yield render.layout(list)
         
         # return a file
         else:
             web.header('Content-Type','application/octet-stream')
-            web.header('Content-disposition', 'attachment; filename=%s' % path)
-            file = open(os.path.join(root,path))
             size = os.path.getsize(os.path.join(root,path))
-            web.header('Content-Length','%s' % size)
-            return file.read()
+            file = open(os.path.join(root,path), 'rb')
+            if size < 1024 * 10 * 10:
+                web.header('Content-disposition', 'attachment; filename=%s' % path)
+                web.header('Content-Length','%s' % size)
+                yield file.read()
+            else:
+                web.header('Transfer-Encoding','chunked')
+                while True:
+                    content = file.read(1024 * 10 * 10)
+                    if (len(content) == 0):
+                        break
+                    yield content
             
     def DELETE(self,filename):
         try:
-            filename = filename.encode('utf-8') 
+            if sys.platform != 'win32':
+                filename = filename.encode('utf-8')
             os.remove(os.path.join(root,filename))
         except:
             return "success" 
@@ -95,7 +123,7 @@ class Index:
             filepath= x.file.filename.replace('\\','/')     # replaces the windows-style slashes with linux ones.
             filename = filepath.split('/')[-1]              # splits the and chooses the last part (the filename with extension)
             filename = unicode(filename, "utf8")
-            fout = open(os.path.join(root,filename),'w')    # creates the file where the uploaded file should be stored
+            fout = open(os.path.join(root,filename),'wb')    # creates the file where the uploaded file should be stored
             fout.write(x.file.file.read())                  # writes the uploaded file to the newly created file.
             fout.close()                                    # closes the file, upload complete.
             
